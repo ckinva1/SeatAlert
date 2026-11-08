@@ -1,0 +1,53 @@
+name: Seat watcher
+
+on:
+  schedule:
+    # Runs at :07 and :37 past each hour (UTC cron, so the minutes are the same
+    # in every time zone). That is every 30 minutes, which fits a private repo's
+    # free minutes, and it avoids the top of the hour when GitHub is busiest.
+    # Public repo? You can check more often, e.g. every 15 minutes:
+    #   - cron: "7,22,37,52 * * * *"
+    - cron: "7,37 * * * *"
+  workflow_dispatch: # adds a "Run workflow" button on the Actions tab for testing
+
+concurrency:
+  group: seat-watcher
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install requests
+
+      # Each run starts on a blank machine, so we keep seat_state.json in the
+      # Actions cache to remember whether we already alerted you.
+      - name: Restore last-seen state
+        uses: actions/cache/restore@v4
+        with:
+          path: seat_state.json
+          key: seat-state-${{ github.run_id }}
+          restore-keys: seat-state-
+
+      - name: Check seats
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python seat_watcher.py
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: seat_state.json
+          key: seat-state-${{ github.run_id }}
